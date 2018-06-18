@@ -1,32 +1,32 @@
-import Ember from 'ember';
+import { getOwner } from '@ember/application';
+import { run } from '@ember/runloop';
 import { moduleForComponent } from 'ember-qunit';
-import test from '../../ember-sinon-qunit/test';
-import GMapComponent from 'ember-g-map/components/g-map';
+import test from 'ember-sinon-qunit/test-support/test';
 import sinon from 'sinon';
 
-const { run } = Ember;
-
-let fakeDirectionsService;
-let fakeDirectionsRenderer;
-let component;
+let fakeDirectionsService, fakeDirectionsRenderer, component;
 
 moduleForComponent('g-map-route', 'Unit | Component | g map route', {
   // Specify the other units that are required for this test
   // needs: ['component:foo', 'helper:bar'],
   unit: true,
+  needs: ['component:g-map'],
 
   beforeEach() {
     fakeDirectionsService = {
       route: sinon.stub()
     };
     fakeDirectionsRenderer = {
+      getDirections: sinon.stub(),
       setDirections: sinon.stub(),
-      setMap: sinon.stub()
+      setMap: sinon.stub(),
+      setOptions: sinon.stub()
     };
     sinon.stub(google.maps, 'DirectionsRenderer').returns(fakeDirectionsRenderer);
     sinon.stub(google.maps, 'DirectionsService').returns(fakeDirectionsService);
+    const GMapComponent = getOwner(this).factoryFor('component:g-map');
     component = this.subject({
-      mapContext: new GMapComponent()
+      mapContext: GMapComponent.create()
     });
   },
 
@@ -156,6 +156,7 @@ test('it calls `route` of directionsService on `updateRoute`', function() {
     destinationLng: 1,
     destinationLat: 11
   }));
+
   run(() => component.set('directionsService', fakeDirectionsService));
   run(() => component.set('directionsRenderer', fakeDirectionsRenderer));
 
@@ -169,9 +170,10 @@ test('it calls `route` of directionsService on `updateRoute`', function() {
   run(() => component.updateRoute());
 
   const correctRequest = {
-    origin: origin,
-    destination: destination,
-    travelMode: google.maps.TravelMode.DRIVING
+    origin,
+    destination,
+    travelMode: google.maps.TravelMode.DRIVING,
+    waypoints: []
   };
 
   sinon.assert.calledOnce(fakeDirectionsService.route);
@@ -201,4 +203,174 @@ test('it calls `setDirections` of directionsRenderer on `updateRoute`', function
 
   google.maps.LatLng.restore();
   fakeDirectionsService.route = sinon.stub();
+});
+
+test('it triggers `updatePolylineOptions` on `initDirectionsService` call', function() {
+  component.updatePolylineOptions = sinon.spy();
+
+  run(() => component.set('map', {}));
+  run(() => component.initDirectionsService());
+
+  sinon.assert.calledOnce(component.updatePolylineOptions);
+});
+
+test('it triggers `updatePolylineOptions` on `strokeColor` change', function() {
+  component.updatePolylineOptions = sinon.spy();
+  run(() => component.set('strokeColor', '#000000'));
+  sinon.assert.calledOnce(component.updatePolylineOptions);
+});
+
+test('it triggers `updatePolylineOptions` on `strokeWeight` change', function() {
+  component.updatePolylineOptions = sinon.spy();
+  run(() => component.set('strokeWeight', 5));
+  sinon.assert.calledOnce(component.updatePolylineOptions);
+});
+
+test('it triggers `updatePolylineOptions` on `strokeOpacity` change', function() {
+  component.updatePolylineOptions = sinon.spy();
+  run(() => component.set('strokeOpacity', 0.1));
+  sinon.assert.calledOnce(component.updatePolylineOptions);
+});
+
+test('it triggers `updatePolylineOptions` on `zIndex` change', function() {
+  component.updatePolylineOptions = sinon.spy();
+  run(() => component.set('zIndex', 2));
+  sinon.assert.calledOnce(component.updatePolylineOptions);
+});
+
+test('it triggers `updatePolylineOptions` only once on several option changes', function() {
+  component.updatePolylineOptions = sinon.spy();
+  run(() => component.setProperties({
+    strokeWeight: 2,
+    strokeOpacity: 0.5,
+    zIndex: 4
+  }));
+  sinon.assert.calledOnce(component.updatePolylineOptions);
+});
+
+test('it calls `setOptions` of directionsRenderer on `updatePolylineOptions`', function() {
+  const polylineOptions = {
+    strokeColor: '#ffffff',
+    strokeWeight: 2,
+    strokeOpacity: 1,
+    zIndex: 1
+  };
+  run(() => component.setProperties(polylineOptions));
+  run(() => component.set('directionsRenderer', fakeDirectionsRenderer));
+
+  run(() => component.updatePolylineOptions());
+
+  sinon.assert.calledOnce(fakeDirectionsRenderer.setOptions);
+  sinon.assert.calledWith(fakeDirectionsRenderer.setOptions, { polylineOptions });
+});
+
+test('it doesn\'t call `setOptions` of directionsRenderer on `updatePolylineOptions` if no options are provided', function() {
+  run(() => component.set('directionsRenderer', fakeDirectionsRenderer));
+  run(() => component.updatePolylineOptions());
+  sinon.assert.notCalled(fakeDirectionsRenderer.setOptions);
+});
+
+test('it calls `setDirections` of directionsRenderer on `updatePolylineOptions` if `getDirections` return something', function() {
+  fakeDirectionsRenderer.getDirections.returns(['a', 'b']);
+
+  run(() => component.set('strokeColor', '#ffffff'));
+  run(() => component.set('directionsRenderer', fakeDirectionsRenderer));
+
+  run(() => component.updatePolylineOptions());
+
+  sinon.assert.calledOnce(fakeDirectionsRenderer.setDirections);
+  sinon.assert.calledWith(fakeDirectionsRenderer.setDirections, ['a', 'b']);
+});
+
+test('it doesn\'t call `setDirections` of directionsRenderer on `updatePolylineOptions` if `getDirections` return nothing', function() {
+  fakeDirectionsRenderer.getDirections.returns([]);
+
+  run(() => component.set('strokeColor', '#ffffff'));
+  run(() => component.set('directionsRenderer', fakeDirectionsRenderer));
+
+  run(() => component.updatePolylineOptions());
+
+  sinon.assert.notCalled(fakeDirectionsRenderer.setDirections);
+});
+
+test('it registers waypoint in `waypoints` array during `registerWaypoint`', function(assert) {
+  const component = this.subject();
+  this.render();
+
+  const firstWaypoint = { name: 'first' };
+  const secondWaypoint = { name: 'second' };
+  const thirdWaypoint = { name: 'third' };
+
+  run(() => component.get('waypoints').addObject(firstWaypoint));
+  run(() => component.registerWaypoint(secondWaypoint));
+  run(() => component.registerWaypoint(thirdWaypoint));
+
+  assert.equal(component.get('waypoints').length, 3);
+  assert.equal(component.get('waypoints')[1], secondWaypoint);
+  assert.equal(component.get('waypoints')[2], thirdWaypoint);
+});
+
+test('it unregisters waypoint from `waypoints` array during `unregisterWaypoint`', function(assert) {
+  const component = this.subject();
+  this.render();
+
+  const firstWaypoint = { name: 'first' };
+  const secondWaypoint = { name: 'second' };
+  const thirdWaypoint = { name: 'third' };
+
+  run(() => component.get('waypoints').addObjects([firstWaypoint, secondWaypoint, thirdWaypoint]));
+  run(() => component.unregisterWaypoint(secondWaypoint));
+
+  assert.equal(component.get('waypoints').length, 2);
+  assert.equal(component.get('waypoints')[0], firstWaypoint);
+  assert.equal(component.get('waypoints')[1], thirdWaypoint);
+});
+
+test('it triggers `updateRoute` on change of one of `waypoints` location', function() {
+  run(() => component.get('waypoints').addObjects([
+    { location: { oldValue: true } },
+    { location: { anotherOldValue: true } }
+  ]));
+  component.updateRoute = sinon.spy();
+  run(() => component.set('waypoints.firstObject.location', { newValue: true }));
+  sinon.assert.calledOnce(component.updateRoute);
+});
+
+test('it triggers `updateRoute` on addition to `waypoints`', function() {
+  run(() => component.get('waypoints').addObjects([
+    { location: { oldValue: true } }
+  ]));
+  component.updateRoute = sinon.spy();
+  run(() => component.get('waypoints').addObject({ location: { newValue: true } }));
+  sinon.assert.calledOnce(component.updateRoute);
+});
+
+test('it triggers `updateRoute` when one of `waypoints` is removed', function() {
+  run(() => component.get('waypoints').addObjects([
+    { location: { oldValue: true } },
+    { location: { anotherOldValue: true } }
+  ]));
+  const lastWaypoint = component.get('waypoints.lastObject');
+
+  component.updateRoute = sinon.spy();
+  run(() => component.get('waypoints').removeObject(lastWaypoint));
+
+  sinon.assert.calledOnce(component.updateRoute);
+});
+
+test('it triggers `updateRoute` only once on several changes tp `waypoints`', function() {
+  run(() => component.get('waypoints').addObjects([
+    { location: { oldValue: true } },
+    { location: { anotherOldValue: true } }
+  ]));
+  const lastWaypoint = component.get('waypoints.lastObject');
+
+  component.updateRoute = sinon.spy();
+  run(() => {
+    component.get('waypoints').addObject({ location: { newValue: true } });
+    component.get('waypoints').removeObject(lastWaypoint);
+    component.set('waypoints.firstObject.location', { newValue: true });
+  });
+
+  sinon.assert.calledOnce(component.updateRoute);
 });

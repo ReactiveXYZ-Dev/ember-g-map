@@ -1,17 +1,20 @@
-import Ember from 'ember';
+import { alias } from '@ember/object/computed';
+import Component from '@ember/component';
+import { observer } from '@ember/object';
+import { run } from '@ember/runloop';
+import { assert } from '@ember/debug';
+import { typeOf, isPresent, isEmpty } from '@ember/utils';
 import layout from '../templates/components/g-map-marker';
 import GMapComponent from './g-map';
 
-const { isEmpty, isPresent, observer, computed, run, assert, typeOf } = Ember;
-
-const GMapMarkerComponent = Ember.Component.extend({
-  layout: layout,
+const GMapMarkerComponent = Component.extend({
+  layout,
   classNames: ['g-map-marker'],
 
-  map: computed.alias('mapContext.map'),
+  map: alias('mapContext.map'),
 
   init() {
-    this._super(arguments);
+    this._super(...arguments);
     this.infowindow = null;
     if (isEmpty(this.get('group'))) {
       this.set('group', null);
@@ -24,17 +27,22 @@ const GMapMarkerComponent = Ember.Component.extend({
   },
 
   didInsertElement() {
-    this._super();
-    if (isEmpty(this.get('marker'))) {
+    this._super(...arguments);
+    if (isEmpty(this.get('marker'))
+      && (typeof FastBoot === 'undefined')
+      && (typeof google !== 'undefined')) {
       const marker = new google.maps.Marker();
       this.set('marker', marker);
     }
     this.setPosition();
+    this.setZIndex();
     this.setIcon();
+    this.setDraggable();
     this.setLabel();
     this.setTitle();
     this.setMap();
     this.setOnClick();
+    this.setOnDrag();
   },
 
   willDestroyElement() {
@@ -42,12 +50,47 @@ const GMapMarkerComponent = Ember.Component.extend({
     this.get('mapContext').unregisterMarker(this);
   },
 
-  registerInfowindow(infowindow) {
+  registerInfowindow(infowindow, openEvent, closeEvent) {
     this.set('infowindow', infowindow);
+    this.attachOpenCloseEvents(infowindow, openEvent, closeEvent);
   },
 
   unregisterInfowindow() {
     this.set('infowindow', null);
+  },
+
+  attachOpenCloseEvents(infowindow, openEvent, closeEvent) {
+    const marker = this.get('marker');
+    if (openEvent === closeEvent) {
+      this.attachTogglingInfowindowEvent(marker, infowindow, openEvent);
+    } else {
+      this.attachOpenInfowindowEvent(marker, infowindow, openEvent);
+      this.attachCloseInfowindowEvent(marker, infowindow, closeEvent);
+    }
+  },
+
+  attachOpenInfowindowEvent(marker, infowindow, event) {
+    if (isPresent(event)) {
+      marker.addListener(event, () => infowindow.open());
+    }
+  },
+
+  attachCloseInfowindowEvent(marker, infowindow, event) {
+    if (isPresent(event)) {
+      marker.addListener(event, () => infowindow.close());
+    }
+  },
+
+  attachTogglingInfowindowEvent(marker, infowindow, event) {
+    if (isPresent(event)) {
+      marker.addListener(event, () => {
+        if (infowindow.get('isOpen')) {
+          infowindow.close();
+        } else {
+          infowindow.open();
+        }
+      });
+    }
   },
 
   unsetMarkerFromMap() {
@@ -79,9 +122,14 @@ const GMapMarkerComponent = Ember.Component.extend({
     const lat = this.get('lat');
     const lng = this.get('lng');
 
-    if (isPresent(marker) && isPresent(lat) && isPresent(lng)) {
+    if (isPresent(marker)
+      && isPresent(lat)
+      && isPresent(lng)
+      && (typeof FastBoot === 'undefined')) {
       const position = new google.maps.LatLng(lat, lng);
-      marker.setPosition(position);
+      if (isPresent(position)) {
+        marker.setPosition(position);
+      }
     }
   },
 
@@ -98,11 +146,48 @@ const GMapMarkerComponent = Ember.Component.extend({
     }
   },
 
+  zIndexChanged: observer('zIndex', function() {
+    run.once(this, 'setZIndex');
+  }),
+
+  setZIndex() {
+    const marker = this.get('marker');
+    const zIndex = this.get('zIndex');
+    if (isPresent(marker) && isPresent(zIndex)) {
+      marker.setZIndex(zIndex);
+    }
+  },
+
+  draggableChanged: observer('draggable', function() {
+    run.once(this, 'setDraggable');
+  }),
+
+  setDraggable() {
+    const marker = this.get('marker');
+    const draggable = this.get('draggable');
+    if (isPresent(marker) && isPresent(draggable)) {
+      marker.setDraggable(draggable);
+    }
+  },
+
   setOnClick() {
     const marker = this.get('marker');
     if (isPresent(marker)) {
       marker.addListener('click', () => this.sendOnClick());
     }
+  },
+
+  setOnDrag() {
+    const marker = this.get('marker');
+    marker.addListener('dragend', (event) => {
+      const lat = event.latLng.lat();
+      const lng = event.latLng.lng();
+      if (isPresent(lat) && isPresent(lng) && isPresent(marker)) {
+        const position = new google.maps.LatLng(lat, lng);
+        marker.setPosition(position);
+        this.sendOnDrag(lat, lng);
+      }
+    });
   },
 
   labelChanged: observer('label', function() {
@@ -132,7 +217,7 @@ const GMapMarkerComponent = Ember.Component.extend({
   },
 
   sendOnClick() {
-    const { onClick } = this.attrs;
+    const onClick = this.get('onClick');
     const mapContext = this.get('mapContext');
     const group = this.get('group');
 
@@ -144,6 +229,16 @@ const GMapMarkerComponent = Ember.Component.extend({
 
     if (isPresent(group)) {
       mapContext.groupMarkerClicked(this, group);
+    }
+  },
+
+  sendOnDrag(lat, lng) {
+    const onDrag = this.get('onDrag');
+
+    if (typeOf(onDrag) === 'function') {
+      onDrag(lat, lng);
+    } else {
+      this.sendAction('onDrag', lat, lng);
     }
   },
 

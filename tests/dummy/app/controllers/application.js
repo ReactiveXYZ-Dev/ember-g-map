@@ -1,16 +1,20 @@
-import Ember from 'ember';
+import { reads } from '@ember/object/computed';
+import Controller from '@ember/controller';
+import { computed } from '@ember/object';
 
-const { computed } = Ember;
-
-export default Ember.Controller.extend({
+export default Controller.extend({
   randomVariable: 111,
 
   addressQuery: 'SF, Lafayette Park',
-  addressQueryInput: computed.reads('addressQuery'),
+  addressQueryInput: reads('addressQuery'),
+  routeColor: 'red',
+  showingAllPolylineCoords: true,
 
-  customOptions: {
-    mapTypeId: google.maps.MapTypeId.TERRAIN
-  },
+  customOptions: computed(function() {
+    if (google) {
+      return { mapTypeId: google.maps.MapTypeId.TERRAIN };
+    }
+  }),
 
   actions: {
     refresh() {
@@ -23,6 +27,18 @@ export default Ember.Controller.extend({
 
     updateAdressQuery() {
       this.set('addressQuery', this.get('addressQueryInput'));
+    },
+
+    toggleRouteColor() {
+      if (this.get('routeColor') === 'red') {
+        this.set('routeColor', 'green');
+      } else {
+        this.set('routeColor', 'red');
+      }
+    },
+
+    togglePolylineCoords() {
+      this.toggleProperty('showingAllPolylineCoords');
     }
   }
 });

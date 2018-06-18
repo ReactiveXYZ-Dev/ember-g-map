@@ -1,17 +1,18 @@
-import Ember from 'ember';
+import { alias } from '@ember/object/computed';
+import Component from '@ember/component';
+import { observer } from '@ember/object';
+import { run } from '@ember/runloop';
+import { typeOf, isEmpty, isPresent } from '@ember/utils';
 import layout from '../templates/components/g-map-address-marker';
-/* global google */
 
-const { computed, observer, run, isPresent, isEmpty, typeOf } = Ember;
-
-const GMapAddressMarkerComponent = Ember.Component.extend({
-  layout: layout,
+const GMapAddressMarkerComponent = Component.extend({
+  layout,
   classNames: ['g-map-address-marker'],
 
-  map: computed.alias('mapContext.map'),
+  map: alias('mapContext.map'),
 
   didInsertElement() {
-    this._super();
+    this._super(...arguments);
     this.initPlacesService();
   },
 
@@ -23,7 +24,9 @@ const GMapAddressMarkerComponent = Ember.Component.extend({
     const map = this.get('map');
     let service = this.get('placesService');
 
-    if (isPresent(map) && isEmpty(service)) {
+    if (isPresent(map)
+      && isEmpty(service)
+      && (typeof FastBoot === 'undefined')) {
       service = new google.maps.places.PlacesService(map);
       this.set('placesService', service);
       this.searchLocation();
@@ -38,11 +41,13 @@ const GMapAddressMarkerComponent = Ember.Component.extend({
     const service = this.get('placesService');
     const address = this.get('address');
 
-    if (isPresent(service) && isPresent(address)) {
+    if (isPresent(service)
+      && isPresent(address)
+      && (typeof FastBoot === 'undefined')) {
       const request = { query: address };
 
       service.textSearch(request, (results, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK) {
+        if (google && status === google.maps.places.PlacesServiceStatus.OK) {
           this.updateLocation(results);
         }
       });
@@ -50,16 +55,20 @@ const GMapAddressMarkerComponent = Ember.Component.extend({
   },
 
   updateLocation(results) {
-    const lat = results[0].geometry.location.lat();
-    const lng = results[0].geometry.location.lng();
+    if (!this.destroyed) {
+      const lat = results[0].geometry.location.lat();
+      const lng = results[0].geometry.location.lng();
+      const { viewport } = results[0].geometry;
 
-    this.set('lat', lat);
-    this.set('lng', lng);
-    this.sendOnLocationChange(lat, lng, results);
+      this.set('lat', lat);
+      this.set('lng', lng);
+      this.set('viewport', viewport);
+      this.sendOnLocationChange(lat, lng, results);
+    }
   },
 
   sendOnLocationChange() {
-    const { onLocationChange } = this.attrs;
+    const onLocationChange = this.get('onLocationChange');
 
     if (typeOf(onLocationChange) === 'function') {
       onLocationChange(...arguments);

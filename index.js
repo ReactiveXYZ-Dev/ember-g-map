@@ -1,4 +1,3 @@
-/* jshint node: true */
 'use strict';
 
 module.exports = {
@@ -22,27 +21,44 @@ module.exports = {
     var content = '';
 
     if (type === 'head') {
-      var src = "//maps.googleapis.com/maps/api/js";
-      var gMapConfig = config['g-map'] || {};
-      var params = [];
+      let src = '//maps.googleapis.com/maps/api/js';
+      let gMapConfig = config['g-map'] || {};
+      let params = [];
 
-      var key = gMapConfig.key;
-      if (key) {
-        params.push('key=' + encodeURIComponent(key));
+      if (gMapConfig.key) {
+        params.push(`key=${encodeURIComponent(gMapConfig.key)}`);
       }
 
-      var libraries = gMapConfig.libraries;
-      if (libraries && libraries.length) {
-        params.push('libraries=' + encodeURIComponent(libraries.join(',')));
+      if (gMapConfig.version) {
+        params.push(`v=${encodeURIComponent(gMapConfig.version)}`);
       }
 
-      var protocol = gMapConfig.protocol;
-      if (protocol) {
-        src = protocol + ":" + src;
+      if (gMapConfig.client) {
+        params.push(`client=${encodeURIComponent(gMapConfig.client)}`);
       }
 
-      src += '?' + params.join('&');
-      content = '<script type="text/javascript" src="' + src + '"></script>';
+      if (gMapConfig.channel) {
+        params.push(`channel=${encodeURIComponent(gMapConfig.channel)}`);
+      }
+
+      if (gMapConfig.libraries && gMapConfig.libraries.length) {
+        params.push(`libraries=${encodeURIComponent(gMapConfig.libraries.join(','))}`);
+      }
+
+      if (gMapConfig.language) {
+        params.push(`language=${encodeURIComponent(gMapConfig.language)}`);
+      }
+
+      if (gMapConfig.protocol) {
+        src = `${gMapConfig.protocol}:${src}`;
+      }
+
+      src = `${src}?${params.join('&')}`;
+      content = `<script type="text/javascript" src="${src}"></script>`;
+
+      if (gMapConfig.exclude) {
+        content = '';
+      }
     }
 
     return content;

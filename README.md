@@ -20,18 +20,43 @@ Simply add something similar to this to your styles:
   height: 400px;
 }
 ```
+In case you want to make the google map to have full width and height as the parent div, you can do the following:
 
-In `config/environment.js` you can specify additional Google Maps libraries
-to be loaded along with this add-on (check the full list [here](https://developers.google.com/maps/documentation/javascript/libraries)),
-optional API key for your application (additional info could be found [here](https://developers.google.com/maps/web/)) and optional explicit protocol setting.
+```css
+.g-map{
+  height: 100%;
+}
+.g-map-canvas {
+  width: 100%;
+  height: 100%;
+}
+```
+
+In `config/environment.js` you can specify:
+- additional Google Maps `libraries` to be loaded along with this add-on
+  (check the full list [here](https://developers.google.com/maps/documentation/javascript/libraries)),
+- optional API `key` or `client` ID for your application (additional info could be found [here](https://developers.google.com/maps/web/)),
+- optional [`channel`](https://developers.google.com/maps/premium/reports/usage-reports#channels),
+- optional `version` number,
+- optional `exclude` parameter, which prevents the addon from injecting the google maps api script tag into your app's index.html. This is useful if you need a custom strategy for loading the google maps script.
+- optional `language` for map localization,
+- optional explicit `protocol` setting.
 
 ```javascript
 ENV['g-map'] = {
+  exclude: true,
   libraries: ['places', 'geometry'],
   key: 'your-unique-google-map-api-key',
+  client: 'gme-your-unique-google-client-id',
+  channel: 'my-google-map-api-channel',
+  version: '3.26',
+  language: 'ru',
   protocol: 'https'
 }
 ```
+
+### Loading Google Maps API In China
+The default Google Maps API library [does not load in China](https://developers.google.com/maps/documentation/javascript/localization#GoogleMapsChina), if your app needs to work in China you will need to implement a custom loading strategy for the Google Maps API. 
 
 # Usage
 
@@ -57,21 +82,50 @@ Mandatory `context` attribute ties child-elements
 with the main `g-map` component. You can also set optional attributes:
 - simple title appearing on hover using `title` attribute,
 - marker label using `label`,
-- `onClick` action to track all `click` events on that marker.
+- `draggable` boolean option,
+- `onClick` action to track all `click` events on that marker,
+- `onDrag` action to track all `dragend` events on that marker (callback receives new `lat` and `lng` in attributes).
+- `viewport` optional google.maps.LatLngBounds, provides an optimized map viewport for the marker. This is generally provided by the [google geocoder](https://developers.google.com/maps/documentation/javascript/3.exp/reference#PlaceGeometry)
 
 ```handlebars
 {{#g-map lat=37.7833 lng=-122.4167 zoom=12 as |context|}}
   {{g-map-marker context lat=37.7933 lng=-122.4167 onClick=(action "handleClick")}}
   {{g-map-marker context lat=37.7833 lng=-122.4267 onClick="handleClick" title=titleForSecondMarker}}
-  {{g-map-marker context lat=37.7733 lng=-122.4067 label="3" title="Marker #3"}}
+  {{g-map-marker context lat=37.7733 lng=-122.4067 draggable=true onDrag=(action "handleDrag") label="3" title="Marker #3"}}
 {{/g-map}}
+```
+
+### Custom Marker Images
+
+You can assign custom images to your markers by pointing the `icon` attribute to an image file (jpg, png, svg, etc.)
+
+```handlebars
+{{g-map-marker context lat=lat lng=lng icon="/assets/images/driver-icon.svg" }}
+```
+
+### Complex Marker Icons
+
+You can also create a [complex marker icon](https://developers.google.com/maps/documentation/javascript/markers#complex_icons) by defining an icon object and passing it to the `icon` attribute
+
+```javascript
+myIcon: {
+  url: "/assets/images/driver-icon.svg",
+  size: new google.maps.Size(30,30),
+  scaledSize: new google.maps.Size(20,20),
+  anchor: new google.maps.Point(15, 15),
+  origin: new google.maps.Point(0, 0),
+  labelOrigin: new google.maps.Point(30, 15),
+}
+```
+
+```handlebars
+{{g-map-marker context lat=lat lng=lng icon=myIcon }}
 ```
 
 ## Map with Info Windows
 
 These Info Windows will be open right after component is rendered
-and will be closed forever after user closes them. You can specify
-optional `onClose` action to tear down anything you need when Info Window
+and will be closed forever after user closes them. You can specify optional `onOpen` action to trigger anything you need to when the Info Window opens. The infowindow is passed as the only argument to the `onOpen` action.  You can specify optional `onClose` action to tear down anything you need when Info Window
 has been closed by user.
 
 Available options (see details [in docs](https://developers.google.com/maps/documentation/javascript/3.exp/reference#InfoWindowOptions)):
@@ -90,9 +144,11 @@ Available options (see details [in docs](https://developers.google.com/maps/docu
                      title="Blockless form" message="Plain text."}}
   {{g-map-infowindow context lat=37.7733 lng=-122.4067
                      title="With action set"
+                     onOpen="myOnOpenAction"
                      onClose="myOnCloseAction"}}
   {{g-map-infowindow context lat=37.7733 lng=-122.4067
                      title="With closure action set"
+                     onOpen=(action "myOnOpenAction")
                      onClose=(action "myOnCloseAction")}}
 {{/g-map}}
 ```
@@ -119,13 +175,23 @@ Markers can have bound Info Windows activated on click.
 To properly bind Info Window with Marker you should call `g-map-marker`
 in block form and set context of Info Window to the one provided by Marker.
 
+You can optionally setup custom `openOn`/`closeOn` events for each Info Window,
+available options are: `click`, `dblclick`, `rightclick`, `mouseover`, `mouseout`.
+By default `openOn` is set to `click` and `closeOn` is set to `null`. When `openOn`
+and `closeOn` are the same, Info Window visibility is being toggled by this event.
+
 ```handlebars
 {{#g-map lat=37.7833 lng=-122.4167 zoom=12 as |context|}}
-  {{g-map-marker context lat=37.7933 lng=-122.4167}}
   {{#g-map-marker context lat=37.7833 lng=-122.4267 as |markerContext|}}
-    {{#g-map-infowindow markerContext}}
+    {{#g-map-infowindow markerContext openOn="mouseover" closeOn="mouseout"}}
       <h2>Bound Info Window</h2>
     {{/g-map-infowindow}}
+  {{/g-map-marker}}
+  {{#g-map-marker context lat=37.7833 lng=-122.4267 as |markerContext|}}
+    {{g-map-infowindow markerContext openOn="click" closeOn="click" title="Blockless form 1"}}
+  {{/g-map-marker}}
+  {{#g-map-marker context lat=37.7833 lng=-122.4267 as |markerContext|}}
+    {{g-map-infowindow markerContext openOn="dblclick" title="Blockless form 2"}}
   {{/g-map-marker}}
 {{/g-map}}
 ```
@@ -165,7 +231,8 @@ one Info Window is open at each moment for Markers of each group.
 ## Marker bound to address query
 
 Proxy `g-map-address-marker` component takes address string as parameter
-and translates it to lat/lng under the hood.
+and translates it to lat/lng/viewport under the hood.
+The viewport is used internally to fit the map and can be passed as optional parameter.
 
 Optional `onLocationChange` action hook will send you back coordinates
 of the latest address search result and the raw array of
@@ -183,7 +250,9 @@ ENV['g-map'] = {
 ```javascript
 actions: {
   onLocationChangeHandler(lat, lng, results) {
+    const { viewport } = results[0].geometry;
     Ember.Logger.log(`lat: ${lat}, lng: ${lng}`);
+    Ember.Logger.log(`viewport: ${viewport}`);
     Ember.Logger.debug(results);
   }
 }
@@ -192,7 +261,7 @@ actions: {
 ```handlebars
 {{#g-map lat=37.7833 lng=-122.4167 zoom=12 as |context|}}
   {{g-map-address-marker context address="San Francisco, Russian Hill"}}
-  {{#g-map-address-marker context address="Delft, The Netherlands"}}
+  {{#g-map-address-marker context address="Delft, The Netherlands" as |markerContext|}}
     {{#g-map-infowindow markerContext}}
       Works in block form too.
     {{/g-map-infowindow}}
@@ -215,12 +284,129 @@ You can optionally set travel mode with `travelMode` attr:
 - `transit`
 - `driving` (default)
 
+You can optionally set following custom polyline options as attributes:
+- `strokeColor`
+- `strokeWeight`
+- `strokeOpacity`
+- `zIndex`
+
 ```handlebars
 {{#g-map lat=37.7833 lng=-122.4167 zoom=12 as |context|}}
   {{g-map-route context
+                travelMode='driving' strokeColor='red'
+                originLat=37.7933 originLng=-122.4167
+                destinationLat=37.7733 destinationLng=-122.4167}}
+
+  {{g-map-route context
+                travelMode='bicycling' strokeColor='blue' zIndex=10
                 originLat=37.7933 originLng=-122.4167
                 destinationLat=37.7733 destinationLng=-122.4167}}
 {{/g-map}}
+```
+
+## Route bound to address queries
+
+Proxy `g-map-address-route` component takes 2 address strings as parameters
+and translates them to lat/lng pairs under the hood.
+
+Optional `onLocationChange` action hook will send you back coordinates
+of the latest address search result and the raw array of
+[google.maps.places.PlaceResult](https://developers.google.com/maps/documentation/javascript/reference#PlaceResult) objects provided by `places` library.
+
+Other optional parameters are the same as for `g-map-route`.
+Requires `places` library to be specified in `environment.js`.
+
+```javascript
+ENV['g-map'] = {
+  libraries: ['places']
+}
+```
+
+```javascript
+actions: {
+  onLocationChangeHandler(lat, lng, results) {
+    Ember.Logger.log(`lat: ${lat}, lng: ${lng}`);
+    Ember.Logger.debug(results);
+  }
+}
+```
+
+```handlebars
+{{#g-map lat=37.7833 lng=-122.4167 zoom=12 as |context|}}
+  {{g-map-address-route context
+                        originAddress="Los Angeles, California"
+                        destinationAddress="San Francisco, California"}}
+
+  {{g-map-address-route context
+                        originAddress=searchedAddress
+                        destinationAddress=anotherSearchedAddress
+                        onLocationChange=(action "onLocationChangeHandler")}}
+
+  {{g-map-address-route context
+                        originAddress=searchedAddress
+                        destinationAddress=anotherSearchedAddress
+                        onLocationChange="onLocationChangeAction"}}
+{{/g-map}}
+```
+
+## Route with waypoints
+
+You can add optional waypoints to both `{{g-map-route}}` and `{{g-map-address-route}}`.
+Waypoints could be added using
+`{{g-map-route-waypoint}}` or `{{g-map-route-address-waypoint}}` components.
+
+```handlebars
+{{#g-map lat=37.7833 lng=-122.4167 zoom=12 as |context|}}
+  {{#g-map-address-route context
+                         originAddress="Los Angeles, California"
+                         destinationAddress="San Francisco, California"
+                         as |routeContext|}}
+    {{g-map-route-address-waypoint routeContext address="New York City, New York"}}
+    {{g-map-route-waypoint routeContext lat=37.7933 lng=-122.4167}}
+    {{g-map-route-address-waypoint routeContext address="Dallas, Texas"}}
+  {{/g-map-address-route}}
+{{/g-map}}
+```
+
+## Map with Polylines
+
+You can optionally set following custom polyline options as attributes:
+- `strokeColor`
+- `strokeWeight`
+- `strokeOpacity`
+- `zIndex`
+- `clickable`
+- `draggable`
+- `geodesic`
+- `icons`
+- `visible`
+- `path`
+
+```handlebars
+{{#g-map lat=37.7833 lng=-122.4167 zoom=12 as |context|}}
+  {{#g-map-polyline context
+                    strokeColor="green" strokeWeight="10" strokeOpacity="0.3"
+                    geodesic=true draggable=true onDrag=(action "onPolylineDrag") as |coordinateContext|}}
+    {{g-map-polyline-coordinate coordinateContext lat=37.7833 lng=-122.4667}}
+    {{g-map-polyline-coordinate coordinateContext lat=37.7933 lng=-122.4567}}
+    {{g-map-polyline-coordinate coordinateContext lat=37.7933 lng=-122.4667}}
+  {{/g-map-polyline}}
+
+  {{g-map-polyline context path=decodedPolyline}}
+{{/g-map}}
+```
+
+For both the `onClick` and `onDrag` actions, the arguments are `event` and `polyline`:
+
+```javascript
+actions: {
+  onPolylineDrag(event, polyline) {
+    const bounds = new window.google.maps.LatLngBounds();
+
+    polyline.getPath().forEach((e) => bounds.extend(e));
+    polyline.map.fitBounds(bounds);
+  }
+}
 ```
 
 ## Demo
@@ -229,26 +415,29 @@ http://asennikov.github.io/ember-g-map/
 
 # Planned Features
 
-- Auto-closing Info Windows
-- Polylines & Polygons
+- Polygons
 - Google Maps events
+- Better DEMO app
 
-## Running
+### Linting
 
-* `ember server`
-* Visit your app at http://localhost:4200.
+* `npm run lint:js`
+* `npm run lint:js -- --fix`
 
-## Running Tests
+### Running tests
 
-* `ember test`
-* `ember test --server`
+* `ember test` – Runs the test suite on the current Ember version
+* `ember test --server` – Runs the test suite in "watch mode"
+* `ember try:each` – Runs the test suite against multiple Ember versions
 
-## Building
+### Running the dummy application
 
-* `ember build`
+* `ember serve`
+* Visit the dummy application at [http://localhost:4200](http://localhost:4200).
 
-For more information on using ember-cli, visit [http://www.ember-cli.com/](http://www.ember-cli.com/).
+For more information on using ember-cli, visit [https://ember-cli.com/](https://ember-cli.com/).
 
-## Legal
+License
+------------------------------------------------------------------------------
 
-[Licensed under the MIT license](http://www.opensource.org/licenses/mit-license.php)
+This project is licensed under the [MIT License](LICENSE.md).

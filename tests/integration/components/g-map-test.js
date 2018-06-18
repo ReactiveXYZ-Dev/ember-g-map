@@ -13,7 +13,7 @@ test('it renders', function(assert) {
 
   this.render(hbs`{{g-map}}`);
 
-  assert.equal(this.$().text().trim(), '');
+  assert.ok(this.$());
 
   // Template block usage:
   this.render(hbs`
@@ -22,10 +22,10 @@ test('it renders', function(assert) {
     {{/g-map}}
   `);
 
-  assert.equal(this.$().text().trim(), 'template block text');
+  assert.ok(this.$());
 });
 
-test('it contains list of child markers', function(assert) {
+test('it includes list of child markers', function(assert) {
   assert.expect(1);
 
   this.render(hbs`

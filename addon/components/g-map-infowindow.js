@@ -1,19 +1,30 @@
-import Ember from 'ember';
+import { alias } from '@ember/object/computed';
+import Component from '@ember/component';
+import { A } from '@ember/array';
+import { observer } from '@ember/object';
+import { run } from '@ember/runloop';
+import { assert } from '@ember/debug';
+import { typeOf, isPresent, isEmpty } from '@ember/utils';
 import layout from '../templates/components/g-map-infowindow';
 import GMapComponent from './g-map';
 import GMapMarkerComponent from './g-map-marker';
+import compact from '../utils/compact';
 
-const { isEmpty, isPresent, observer, computed, run, assert, typeOf } = Ember;
+const allowedOptions = A(['disableAutoPan', 'maxWidth', 'pixelOffset']);
 
-const GMapInfowindowComponent = Ember.Component.extend({
-  layout: layout,
+const OPEN_CLOSE_EVENTS = A(
+  ['click', 'dblclick', 'rightclick', 'mouseover', 'mouseout']
+);
+
+const GMapInfowindowComponent = Component.extend({
+  layout,
   classNames: ['g-map-marker'],
 
-  map: computed.alias('mapContext.map'),
-  marker: computed.alias('mapContext.marker'),
+  map: alias('mapContext.map'),
+  marker: alias('mapContext.marker'),
 
   init() {
-    this._super(arguments);
+    this._super(...arguments);
 
     const mapContext = this.get('mapContext');
     const hasMap = mapContext instanceof GMapComponent;
@@ -25,7 +36,7 @@ const GMapInfowindowComponent = Ember.Component.extend({
   },
 
   didInsertElement() {
-    this._super();
+    this._super(...arguments);
     if (isEmpty(this.get('infowindow'))) {
       const infowindow = this.buildInfowindow();
       this.set('infowindow', infowindow);
@@ -44,52 +55,71 @@ const GMapInfowindowComponent = Ember.Component.extend({
     }
   },
 
-  optionsChanged: observer('disableAutoPan', 'maxWidth', 'pixelOffset', function() {
+  optionsChanged: observer(...allowedOptions, function() {
     run.once(this, 'setOptions');
   }),
 
   setOptions() {
     const infowindow = this.get('infowindow');
-    const options = ['disableAutoPan', 'maxWidth', 'pixelOffset'];
-    const infoWindowOptions = {};
+    const options = compact(this.getProperties(allowedOptions));
 
-    for (let i = 0; i < options.length; i++) {
-      const value = this.get(options[i]);
-      if (isPresent(value)) {
-        infoWindowOptions[options[i]] = value;
-      }
-    }
-
-    if (isPresent(infowindow) && Object.keys(infoWindowOptions).length !== 0) {
-      infowindow.setOptions(infoWindowOptions);
+    if (isPresent(infowindow) && isPresent(Object.keys(options))) {
+      infowindow.setOptions(options);
     }
   },
 
   buildInfowindow() {
-    const infowindow = new google.maps.InfoWindow({
-      content: this.get('element')
-    });
+    if (typeof google !== 'undefined') {
+      const infowindow = new google.maps.InfoWindow({
+        content: this.get('element')
+      });
 
-    if (isPresent(this.get('attrs.onClose'))) {
-      this.attachCloseEvent(infowindow);
+      if (isPresent(this.get('attrs.onOpen'))) {
+        infowindow.addListener('domready', () => this.handleOpenClickEvent());
+      }
+
+      if (isPresent(this.get('attrs.onClose'))) {
+        infowindow.addListener('closeclick', () => this.handleCloseClickEvent());
+      }
+      return infowindow;
     }
-    return infowindow;
   },
 
-  attachCloseEvent(infowindow) {
-    infowindow.addListener('closeclick', () => {
-      const { onClose } = this.attrs;
-      if (typeOf(onClose) === 'function') {
-        onClose();
-      } else {
-        this.sendAction('onClose');
-      }
-    });
+  handleOpenClickEvent() {
+    const onOpen = this.get('onOpen');
+    if (typeOf(onOpen) === 'function') {
+      onOpen();
+    } else {
+      this.sendAction('onOpen', this);
+    }
+  },
+
+  handleCloseClickEvent() {
+    const onClose = this.get('onClose');
+    if (typeOf(onClose) === 'function') {
+      onClose();
+    } else {
+      this.sendAction('onClose');
+    }
+  },
+
+  open() {
+    const infowindow = this.get('infowindow');
+    const map = this.get('map');
+    const marker = this.get('marker');
+
+    this.set('isOpen', true);
+    if (isPresent(map) && isPresent(marker)) {
+      infowindow.open(map, marker);
+    } else if (isPresent(map)) {
+      infowindow.open(map);
+    }
   },
 
   close() {
     const infowindow = this.get('infowindow');
     if (isPresent(infowindow)) {
+      this.set('isOpen', false);
       infowindow.close();
     }
   },
@@ -99,12 +129,8 @@ const GMapInfowindowComponent = Ember.Component.extend({
   }),
 
   setMap() {
-    const map = this.get('map');
-    const hasMarker = this.get('hasMarker');
-    const infowindow = this.get('infowindow');
-
-    if (isPresent(infowindow) && isPresent(map) && !hasMarker) {
-      infowindow.open(map);
+    if (this.get('hasMarker') === false) {
+      this.open();
     }
   },
 
@@ -119,8 +145,9 @@ const GMapInfowindowComponent = Ember.Component.extend({
     const infowindow = this.get('infowindow');
 
     if (isPresent(infowindow) && isPresent(map) && isPresent(marker)) {
-      context.registerInfowindow(this);
-      marker.addListener('click', () => infowindow.open(map, marker));
+      const openEvent = this.retrieveOpenEvent();
+      const closeEvent = this.retrieveCloseEvent();
+      context.registerInfowindow(this, openEvent, closeEvent);
     }
   },
 
@@ -133,10 +160,23 @@ const GMapInfowindowComponent = Ember.Component.extend({
     const lat = this.get('lat');
     const lng = this.get('lng');
 
-    if (isPresent(infowindow) && isPresent(lat) && isPresent(lng)) {
+    if (isPresent(infowindow)
+      && isPresent(lat)
+      && isPresent(lng)
+      && (typeof FastBoot === 'undefined')) {
       const position = new google.maps.LatLng(lat, lng);
       infowindow.setPosition(position);
     }
+  },
+
+  retrieveOpenEvent() {
+    const openEvent = this.get('openOn');
+    return OPEN_CLOSE_EVENTS.includes(openEvent) ? openEvent : 'click';
+  },
+
+  retrieveCloseEvent() {
+    const closeEvent = this.get('closeOn');
+    return OPEN_CLOSE_EVENTS.includes(closeEvent) ? closeEvent : null;
   }
 });
 
